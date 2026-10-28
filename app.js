@@ -1,8 +1,8 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const DB_NAME='asistencia-qr-v1';
-let db,scanner,reading=false,busy=false,previousPayload='',previousAt=0;
-function message(msg,kind=''){const el=$('result');el.className=kind;el.textContent=msg}
+let db,scanner,reading=false,busy=false,previousPayload='',previousAt=0,feedbackTimer=0;
+function message(msg,kind=''){const el=$('result');el.className=kind;el.textContent=msg;clearTimeout(feedbackTimer);feedbackTimer=setTimeout(()=>{el.className='';el.textContent='Listo para el siguiente código.'},6500)}
 function status(msg){$('status').textContent=msg}
 function openDB(){return new Promise((resolve,reject)=>{const q=indexedDB.open(DB_NAME,1);q.onupgradeneeded=()=>{const d=q.result;if(!d.objectStoreNames.contains('employees'))d.createObjectStore('employees',{keyPath:'token'});if(!d.objectStoreNames.contains('records'))d.createObjectStore('records',{keyPath:'id'});if(!d.objectStoreNames.contains('config'))d.createObjectStore('config',{keyPath:'key'})};q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)})}
 function readAll(store){return new Promise((resolve,reject)=>{const t=db.transaction(store,'readonly'),r=t.objectStore(store).getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
@@ -19,12 +19,12 @@ function parsePayload(value){
   if([number,name,area,role].some(x=>x.length>150))throw Error('Los datos del QR son demasiado largos');
   return {number,name,area,role};
  }
- throw Error('Este QR no contiene los datos del trabajador');
+ throw Error('Código leído, pero no contiene número, nombre, área y puesto. Debe ser un QR JSON, no solo un número de barras.');
 }
 async function record(raw){
  if(busy)return;
  const now=Date.now();
- if(raw===previousPayload&&now-previousAt<2500)return;
+ if(raw===previousPayload&&now-previousAt<4000)return;
  busy=true;previousPayload=raw;previousAt=now;
  try{
   const employee=parsePayload(raw);
@@ -42,13 +42,13 @@ async function record(raw){
  finally{busy=false}
 }
 async function start(){
- if(reading)return;
- if(!window.Html5Qrcode){status('No cargó el lector. Revisa la conexión inicial.');$('retry').hidden=false;return}
+ if(reading)return;status('Iniciando lector de QR y barras…');
+ if(!window.Html5Qrcode){status('Error: no cargó el lector de cámara. Se requiere internet para la primera instalación.');message('❌ LECTOR NO DISPONIBLE','bad');$('retry').hidden=false;return}
  try{
-  scanner=scanner||new Html5Qrcode('reader',{verbose:false});
-  await scanner.start({facingMode:'environment'},{fps:8,qrbox:(w,h)=>({width:Math.min(w,260),height:Math.min(h,260)}),aspectRatio:1.3333},value=>{void record(value)},()=>{});
+  scanner=scanner||new Html5Qrcode('reader',{verbose:false,formatsToSupport:[Html5QrcodeSupportedFormats.QR_CODE,Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.CODE_39,Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.EAN_8,Html5QrcodeSupportedFormats.UPC_A,Html5QrcodeSupportedFormats.PDF_417],useBarCodeDetectorIfSupported:false});
+  await scanner.start({facingMode:'environment'},{fps:12,aspectRatio:1.3333,disableFlip:false},value=>{status('Código detectado · validando datos…');void record(value)},()=>{});
   reading=true;status('Cámara activa · acerca el código QR');$('retry').hidden=true;
- }catch(e){status('No se pudo activar la cámara: '+(e?.message||e));$('retry').hidden=false}
+ }catch(e){status('No se pudo activar la cámara: '+(e?.message||e));message('❌ ERROR DE CÁMARA\n'+(e?.message||e),'bad');$('retry').hidden=false}
 }
 (async()=>{
  try{
