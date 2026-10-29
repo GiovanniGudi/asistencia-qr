@@ -53,36 +53,52 @@ async function renderToday(){
 }
 function jsonpAck(ids){
  return new Promise((resolve,reject)=>{
-  const name='qrAck_'+(++ackCounter)+'_'+Date.now();
-  let script=document.createElement('script');
-  const timeout=setTimeout(()=>finish(new Error('Sin respuesta del servidor')),12000);
-  function finish(error,result){clearTimeout(timeout);delete window[name];script.remove();error?reject(error):resolve(result)}
+  const name='qrAck_'+(++ackCounter)+'_'+Date.now(),script=document.createElement('script');
+  let finished=false;
+  const finish=(error,result)=>{if(finished)return;finished=true;clearTimeout(timer);delete window[name];script.remove();error?reject(error):resolve(result)};
+  const timer=setTimeout(()=>finish(new Error('Sin respuesta de doGet (12 s)')),12000);
   window[name]=obj=>finish(null,obj);
-  script.onerror=()=>finish(new Error('No se pudo confirmar la sincronización'));
-  script.src=SYNC_URL+'?callback='+name+'&ids='+encodeURIComponent(ids.join(','));
+  script.onerror=()=>finish(new Error('Falló la consulta de confirmación doGet'));
+  script.src=SYNC_URL+'?callback='+encodeURIComponent(name)+'&ids='+encodeURIComponent(ids.join(','))+'&t='+Date.now();
   document.head.appendChild(script);
  });
 }
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function syncPending(){
  if(syncing)return;
- const pending=(await readAll('records')).filter(x=>x.sync!=='SINCRONIZADO');
+ const pending=(await readAll('records')).filter(x=>x.sync!=='SINCRONIZADO').sort((a,b)=>a.timestamp-b.timestamp);
  if(!SYNC_URL){$('syncStatus').textContent='Sincronización no configurada · '+pending.length+' pendientes';return}
- if(!navigator.onLine){$('syncStatus').textContent='Sin internet · '+pending.length+' registros pendientes';return}
+ if(!navigator.onLine){$('syncStatus').textContent='Sin internet · '+pending.length+' pendientes';return}
+ if(!pending.length){$('syncStatus').textContent='✓ Todos los registros sincronizados';return}
  syncing=true;
  try{
   for(let n=0;n<pending.length;n+=20){
-   const batch=pending.slice(n,n+20);
-   $('syncStatus').textContent='Enviando registros pendientes…';
-   await fetch(SYNC_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({records:batch})});
-   const ack=await jsonpAck(batch.map(x=>x.id));
-   const ids=new Set(ack.ids||[]);
-   for(const row of batch)if(ids.has(row.id)){row.sync='SINCRONIZADO';await save('records',row)}
+   const batch=pending.slice(n,n+20),ids=batch.map(x=>x.id);
+   $('syncStatus').textContent='Verificando '+batch.length+' registros pendientes…';
+   // Confirmar también registros previamente enviados, en caso de cierre antes del ACK.
+   let ack=await jsonpAck(ids),confirmed=new Set(ack.ids||[]);
+   const toSend=batch.filter(x=>!confirmed.has(x.id));
+   if(toSend.length){
+    $('syncStatus').textContent='Enviando '+toSend.length+' registros a Reporteo…';
+    await fetch(SYNC_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({records:toSend})});
+    for(let attempt=0;attempt<4;attempt++){
+     await pause(1250*(attempt+1));
+     ack=await jsonpAck(ids);
+     confirmed=new Set(ack.ids||[]);
+     if(confirmed.size===batch.length)break;
+    }
+   }
+   for(const row of batch){
+    if(confirmed.has(row.id)){row.sync='SINCRONIZADO';await save('records',row)}
+   }
+   await renderToday();
   }
   const left=(await readAll('records')).filter(x=>x.sync!=='SINCRONIZADO').length;
-  $('syncStatus').textContent=left?'⏳ Pendientes de sincronizar: '+left:'✓ Todos los registros sincronizados';
-  await renderToday();
- }catch(e){$('syncStatus').textContent='⏳ No se confirmó la subida; registros conservados en el equipo. Revisa permisos de Apps Script.'}
- finally{syncing=false}
+  $('syncStatus').textContent=left?'⏳ '+left+' registros sin confirmar en Reporteo. Revisa Apps Script → Ejecuciones.':'✓ Todos los registros sincronizados en Reporteo';
+ }catch(e){
+  $('syncStatus').textContent='⚠ Sincronización fallida: '+(e?.message||String(e))+'. Registros conservados.';
+  console.error('Sync Reporteo:',e);
+ }finally{syncing=false}
 }
 
 async function start(){
