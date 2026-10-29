@@ -106,7 +106,7 @@ async function start(){
  if(!window.Html5Qrcode){status('Error: no cargó el lector de cámara. Se requiere internet para la primera instalación.');message('❌ LECTOR NO DISPONIBLE','bad');$('retry').hidden=false;return}
  try{
   scanner=scanner||new Html5Qrcode('reader',{verbose:false,formatsToSupport:[Html5QrcodeSupportedFormats.QR_CODE,Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.CODE_39,Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.EAN_8,Html5QrcodeSupportedFormats.UPC_A,Html5QrcodeSupportedFormats.PDF_417],useBarCodeDetectorIfSupported:false});
-  await scanner.start({facingMode:'environment'},{fps:12,aspectRatio:1.3333,disableFlip:false},value=>{status('Código detectado · validando datos…');void record(value)},()=>{});
+  await scanner.start({facingMode:'environment'},{fps:12,aspectRatio:1.3333,disableFlip:false},value=>{if(!busy){status('Código detectado · validando datos…');void record(value)}},()=>{});
   reading=true;status('Cámara activa · acerca el código QR');$('retry').hidden=true;
  }catch(e){status('No se pudo activar la cámara: '+(e?.message||e));message('❌ ERROR DE CÁMARA\n'+(e?.message||e),'bad');$('retry').hidden=false}
 }
@@ -115,7 +115,7 @@ async function start(){
   db=await openDB();
   if(navigator.storage?.persist)navigator.storage.persist().catch(()=>{});
   $('retry').onclick=()=>start();
-  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').then(r=>r.update()).catch(()=>{});
+  if('serviceWorker'in navigator){navigator.serviceWorker.register('./sw.js').then(r=>r.update()).catch(()=>{});}
   await renderToday();await syncPending();window.addEventListener('online',()=>{void syncPending()});document.addEventListener('visibilitychange',()=>{if(!document.hidden){void renderToday();void syncPending()}});setInterval(()=>{void syncPending()},30000);await start();
  }catch(e){status('No se pudo abrir el almacenamiento local');message('❌ '+e.message,'bad')}
 })();
