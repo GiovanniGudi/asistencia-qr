@@ -80,8 +80,24 @@ async function syncPending(){
    const toSend=batch.filter(x=>!confirmed.has(x.id));
    if(toSend.length){
     $('syncStatus').textContent='Enviando '+toSend.length+' registros a Reporteo…';
-    await fetch(SYNC_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({records:toSend})});
-    for(let attempt=0;attempt<4;attempt++){
+    // Apps Script acepta text/plain desde otro origen. sendBeacon evita
+   // depender de la respuesta opaca/redirect de fetch(no-cors).
+   const payload=JSON.stringify({records:toSend});
+   let submitted=false;
+   if(navigator.sendBeacon){
+    submitted=navigator.sendBeacon(SYNC_URL,new Blob([payload],{type:'text/plain'}));
+   }
+   if(!submitted){
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),12000);
+    try{
+     await fetch(SYNC_URL,{method:'POST',mode:'no-cors',body:payload,headers:{'Content-Type':'text/plain'},signal:controller.signal,keepalive:true});
+     submitted=true;
+    }finally{clearTimeout(timeout)}
+   }
+   if(!submitted)throw new Error('El navegador no pudo enviar la solicitud POST');
+   $('syncStatus').textContent='Solicitud enviada. Esperando confirmación en Reporteo…';
+    for(let attempt=0;attempt<6;attempt++){
      await pause(1250*(attempt+1));
      ack=await jsonpAck(ids);
      confirmed=new Set(ack.ids||[]);
