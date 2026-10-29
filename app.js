@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id);
 const DB_NAME='asistencia-qr-v1';
 // Pegar aquí la URL /exec después de publicar Apps Script
-const SYNC_URL='';
+const SYNC_URL='https://script.google.com/macros/s/AKfycbzl2LhiRqGxe6HcHhuCrplURcOS1KHBiK_RIw5pow6dAO3gLbN7jPvxIojrhJ38Fkzh/exec';
 let syncing=false,ackCounter=0;
 let db,scanner,reading=false,busy=false,previousPayload='',previousAt=0,feedbackTimer=0;
 function message(msg,kind=''){const el=$('result');el.className=kind;el.textContent=msg;clearTimeout(feedbackTimer);feedbackTimer=setTimeout(()=>{el.className='';el.textContent='Listo para el siguiente código.'},6500)}
@@ -66,7 +66,7 @@ function jsonpAck(ids){
 async function syncPending(){
  if(syncing)return;
  const pending=(await readAll('records')).filter(x=>x.sync!=='SINCRONIZADO');
- if(!SYNC_URL){$('syncStatus').textContent='Sincronización pendiente de configuración · '+pending.length+' registros locales';return}
+ if(!SYNC_URL){$('syncStatus').textContent='Sincronización no configurada · '+pending.length+' pendientes';return}
  if(!navigator.onLine){$('syncStatus').textContent='Sin internet · '+pending.length+' registros pendientes';return}
  syncing=true;
  try{
@@ -81,7 +81,7 @@ async function syncPending(){
   const left=(await readAll('records')).filter(x=>x.sync!=='SINCRONIZADO').length;
   $('syncStatus').textContent=left?'⏳ Pendientes de sincronizar: '+left:'✓ Todos los registros sincronizados';
   await renderToday();
- }catch(e){$('syncStatus').textContent='⏳ Sincronización pendiente · '+e.message}
+ }catch(e){$('syncStatus').textContent='⏳ No se confirmó la subida; registros conservados en el equipo. Revisa permisos de Apps Script.'}
  finally{syncing=false}
 }
 
