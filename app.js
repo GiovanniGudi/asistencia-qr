@@ -3,6 +3,26 @@ const $=id=>document.getElementById(id);
 const DB_NAME='asistencia-qr-v1';
 let db,scanner,reading=false,busy=false,previousPayload='',previousAt=0,feedbackTimer=0;
 let preparedExcel=null;
+let audioContext=null;
+function unlockAudio(){
+ try{const A=window.AudioContext||window.webkitAudioContext;if(!A)return;
+  audioContext=audioContext||new A();if(audioContext.state==='suspended')void audioContext.resume().catch(()=>{});
+ }catch(e){console.warn('Audio no disponible',e)}
+}
+function playConfirmation(ok){
+ try{
+  if(!audioContext||audioContext.state!=='running')return;
+  const notes=ok?[[880,0,.10],[1175,.12,.13]]:[[280,0,.16],[210,.18,.18]];
+  for(const [hz,delay,duration] of notes){
+   const oscillator=audioContext.createOscillator(),gain=audioContext.createGain(),at=audioContext.currentTime+delay;
+   oscillator.type='sine';oscillator.frequency.setValueAtTime(hz,at);
+   gain.gain.setValueAtTime(.0001,at);gain.gain.exponentialRampToValueAtTime(.14,at+.012);
+   gain.gain.exponentialRampToValueAtTime(.0001,at+duration);
+   oscillator.connect(gain);gain.connect(audioContext.destination);oscillator.start(at);oscillator.stop(at+duration+.02);
+  }
+ }catch(e){console.warn('Sonido no reproducido',e)}
+}
+
 function message(msg,kind=''){const el=$('result');el.className=kind;el.textContent=msg;clearTimeout(feedbackTimer);feedbackTimer=setTimeout(()=>{el.className='';el.textContent='Listo para el siguiente código.'},6500)}
 function status(msg){$('status').textContent=msg}
 function openDB(){return new Promise((resolve,reject)=>{const q=indexedDB.open(DB_NAME,1);q.onupgradeneeded=()=>{const d=q.result;if(!d.objectStoreNames.contains('employees'))d.createObjectStore('employees',{keyPath:'token'});if(!d.objectStoreNames.contains('records'))d.createObjectStore('records',{keyPath:'id'});if(!d.objectStoreNames.contains('config'))d.createObjectStore('config',{keyPath:'key'})};q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)})}
@@ -31,7 +51,7 @@ async function record(raw){
   const employee=parsePayload(raw);
   const records=await readAll('records');
   const prior=records.filter(r=>String(r.number)===employee.number).sort((a,b)=>b.timestamp-a.timestamp)[0];
-  if(prior&&now-prior.timestamp<8000){message('⚠ YA REGISTRADO\n'+employee.name+'\nEvita pasar el QR nuevamente.','bad');status('Lectura repetida; sin nuevo registro');return}
+  if(prior&&now-prior.timestamp<8000){message('⚠ YA REGISTRADO\n'+employee.name+'\nEvita pasar el QR nuevamente.','bad');status('Lectura repetida; sin nuevo registro');playConfirmation(false);return}
   const device=(await get('config','device'))?.value;
   if(!device?.chiefName||!device?.chiefNumber||!device?.area)throw Error('Falta configurar el responsable y el área');
   const movement=!prior||prior.movement==='SALIDA'?'ENTRADA':'SALIDA';
@@ -39,8 +59,8 @@ async function record(raw){
   const row={id:crypto.randomUUID(),timestamp:now,iso:dt.toISOString(),localTime:dt.toLocaleString('es-MX'),number:employee.number,name:employee.name,administrativeArea:employee.area,role:employee.role,deviceId:device.id||'ANDROID',physicalArea:device.area,chiefName:device.chiefName,chiefNumber:device.chiefNumber,movement,sync:'LOCAL'};
   await save('records',row);await renderToday();void prepareExcel();
   message('✅ REGISTRO CORRECTO\n'+employee.name+'\n'+employee.number+' · '+movement+'\n'+row.localTime,'ok');
-  status('Guardado en este teléfono');
- }catch(err){message('❌ NO REGISTRADO\n'+err.message,'bad');status('Presenta un QR válido')}
+  status('Guardado en este teléfono');playConfirmation(true);
+ }catch(err){message('❌ NO REGISTRADO\n'+err.message,'bad');status('Presenta un QR válido');playConfirmation(false)}
  finally{busy=false}
 }
 
@@ -178,6 +198,8 @@ async function start(){
  try{
   db=await openDB();
   if(navigator.storage?.persist)navigator.storage.persist().catch(()=>{});
+  document.addEventListener('pointerdown',unlockAudio,{passive:true});
+  document.addEventListener('keydown',unlockAudio);
   $('retry').onclick=()=>start();
   if('serviceWorker'in navigator){navigator.serviceWorker.register('./sw.js').then(r=>r.update()).catch(()=>{});}
   $('configForm').addEventListener('submit',e=>{void saveConfiguration(e)});
