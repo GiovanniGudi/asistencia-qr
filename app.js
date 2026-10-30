@@ -96,11 +96,11 @@ function exportExcel(share){
  const {blob,name,count}=preparedExcel;
  if(!share){try{downloadFile(blob,name);status('Descarga solicitada: '+name+'. Confirma en Descargas.')}catch(e){status('Error de descarga: '+e.message)}return}
  const file=new File([blob],name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
- if(!navigator.share||!navigator.canShare?.({files:[file]})){status('El navegador no admite compartir XLSX. Descárgalo y adjúntalo desde WhatsApp.');return}
+ if(!navigator.share||!navigator.canShare?.({files:[file]})){status('Android no permite adjuntar archivos desde esta página. No se abrió WhatsApp sin el Excel.');return}
  try{
-  Promise.resolve(navigator.share({files:[file]})).then(()=>status('Compartir finalizado. '+count+' registros conservados.')).catch(err=>{
+  Promise.resolve(navigator.share({files:[file]})).then(()=>status('Compartir completado. '+count+' registros conservados.')).catch(err=>{
    if(err?.name==='AbortError')status('Compartir cancelado; datos conservados.');
-   else status('Android no permitió adjuntar el Excel: '+(err?.message||err));
+   else status('Android bloqueó el archivo adjunto ('+(err?.message||err)+'). No se abrirá WhatsApp sin el Excel.');
   });
  }catch(err){status('Android no permitió adjuntar el Excel: '+(err?.message||err))}
 }
