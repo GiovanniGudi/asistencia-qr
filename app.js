@@ -128,6 +128,26 @@ function exportExcel(share){
   });
  }catch(err){status('Android no permitió adjuntar el Excel: '+(err?.message||err))}
 }
+function eraseAllRecords(){
+ return new Promise((resolve,reject)=>{
+  const tx=db.transaction('records','readwrite');
+  tx.objectStore('records').clear();
+  tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||Error('Transacción cancelada'));
+ });
+}
+async function clearCurrentRecords(){
+ const records=await readAll('records');
+ if(!records.length){status('No hay registros para borrar.');return}
+ const ok=window.confirm('¿Borrar los '+records.length+' registros de asistencia guardados en este dispositivo? Esta acción es irreversible. Primero exporta el Excel si deseas un respaldo. La configuración del jefe y el área se conservará.');
+ if(!ok)return;
+ try{
+  await eraseAllRecords();
+  previousPayload='';previousAt=0;preparedExcel=null;
+  await renderToday();await prepareExcel();
+  status('Registros eliminados correctamente. Puedes escanear nuevas asistencias.');
+  message('✅ Registros borrados. Configuración conservada.','ok');
+ }catch(err){status('No se pudieron borrar los registros: '+(err?.message||err))}
+}
 async function showConfiguration(){
  await stopCamera();
  $('scanPanel').hidden=true;$('configPanel').hidden=false;
@@ -162,6 +182,7 @@ async function start(){
   if('serviceWorker'in navigator){navigator.serviceWorker.register('./sw.js').then(r=>r.update()).catch(()=>{});}
   $('configForm').addEventListener('submit',e=>{void saveConfiguration(e)});
   $('editConfig').onclick=()=>{void showConfiguration()};
+  $('clearRecords').onclick=()=>{void clearCurrentRecords()};
   $('downloadXlsx').onclick=()=>{void exportExcel(false)};
 
   await renderToday();await prepareExcel();
