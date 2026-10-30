@@ -2,6 +2,7 @@
 const $=id=>document.getElementById(id);
 const DB_NAME='asistencia-qr-v1';
 let db,scanner,reading=false,busy=false,previousPayload='',previousAt=0,feedbackTimer=0;
+let preparedExcel=null;
 function message(msg,kind=''){const el=$('result');el.className=kind;el.textContent=msg;clearTimeout(feedbackTimer);feedbackTimer=setTimeout(()=>{el.className='';el.textContent='Listo para el siguiente código.'},6500)}
 function status(msg){$('status').textContent=msg}
 function openDB(){return new Promise((resolve,reject)=>{const q=indexedDB.open(DB_NAME,1);q.onupgradeneeded=()=>{const d=q.result;if(!d.objectStoreNames.contains('employees'))d.createObjectStore('employees',{keyPath:'token'});if(!d.objectStoreNames.contains('records'))d.createObjectStore('records',{keyPath:'id'});if(!d.objectStoreNames.contains('config'))d.createObjectStore('config',{keyPath:'key'})};q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)})}
@@ -36,7 +37,7 @@ async function record(raw){
   const movement=!prior||prior.movement==='SALIDA'?'ENTRADA':'SALIDA';
   const dt=new Date(now);
   const row={id:crypto.randomUUID(),timestamp:now,iso:dt.toISOString(),localTime:dt.toLocaleString('es-MX'),number:employee.number,name:employee.name,administrativeArea:employee.area,role:employee.role,deviceId:device.id||'ANDROID',physicalArea:device.area,chiefName:device.chiefName,chiefNumber:device.chiefNumber,movement,sync:'LOCAL'};
-  await save('records',row);await renderToday();
+  await save('records',row);await renderToday();void prepareExcel();
   message('✅ REGISTRO CORRECTO\n'+employee.name+'\n'+employee.number+' · '+movement+'\n'+row.localTime,'ok');
   status('Guardado en este teléfono');
  }catch(err){message('❌ NO REGISTRADO\n'+err.message,'bad');status('Presenta un QR válido')}
@@ -85,35 +86,23 @@ function downloadFile(blob,name){
  link.href=url;link.download=name;document.body.appendChild(link);link.click();link.remove();
  setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
-async function exportExcel(share){
+async function prepareExcel(){
+ try{preparedExcel=await createExcel();return true}
+ catch(err){preparedExcel=null;status('Error preparando Excel: '+err.message);return false}
+}
+function exportExcel(share){
+ // El diálogo del sistema necesita activación directa del toque.
+ if(!preparedExcel){status('Preparando Excel. Pulsa de nuevo.');void prepareExcel();return}
+ const {blob,name,count}=preparedExcel;
+ if(!share){try{downloadFile(blob,name);status('Descarga solicitada: '+name+'. Confirma en Descargas.')}catch(e){status('Error de descarga: '+e.message)}return}
+ const file=new File([blob],name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+ if(!navigator.share||!navigator.canShare?.({files:[file]})){status('El navegador no admite compartir XLSX. Descárgalo y adjúntalo desde WhatsApp.');return}
  try{
-  // Generar ANTES del gesto share puede perder activación de usuario en Android.
-  const {blob,name,count}=await createExcel();
-  if(!share){
-   downloadFile(blob,name);
-   status('Descarga solicitada: '+name+'. Revisa Descargas.');
-   return;
-  }
-  const file=new File([blob],name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  if(!navigator.share||!navigator.canShare?.({files:[file]})){
-   downloadFile(blob,name);
-   message('⚠ Compartir archivo no disponible. Excel descargado: compártelo desde Descargas.','bad');
-   return;
-  }
-  try{
-   await navigator.share({files:[file]});
-   status('Archivo enviado al menú de compartir. '+count+' registros conservados.');
-  }catch(err){
-   if(err?.name==='AbortError')status('Compartir cancelado. Los registros siguen guardados.');
-   else if(err?.name==='NotAllowedError'||/permiso denegado|permission denied/i.test(String(err?.message))){
-    downloadFile(blob,name);
-    message('⚠ Android negó el permiso para compartir. Descargué el Excel: envíalo desde Archivos > Descargas a WhatsApp.','bad');
-   }else throw err;
-  }
- }catch(e){
-  status('Exportación no completada: '+(e?.message||e));
-  message('❌ No se pudo preparar el archivo Excel: '+(e?.message||e),'bad');
- }
+  Promise.resolve(navigator.share({files:[file]})).then(()=>status('Compartir finalizado. '+count+' registros conservados.')).catch(err=>{
+   if(err?.name==='AbortError')status('Compartir cancelado; datos conservados.');
+   else status('Android rechazó compartir: '+(err?.message||err)+'. Descarga Excel y adjúntalo en WhatsApp.');
+  });
+ }catch(err){status('Android negó permiso para compartir: '+(err?.message||err)+'. Usa Descargar Excel.')}
 }
 async function showConfiguration(){
  await stopCamera();
@@ -129,7 +118,7 @@ async function saveConfiguration(e){
  await save('config',{key:'device',value:{...old,id:old.id||'ANDROID',chiefName,chiefNumber,area}});
  $('configError').textContent='';$('configPanel').hidden=true;$('scanPanel').hidden=false;
  $('responsibleInfo').textContent='Área: '+area+' · Responsable: '+chiefName+' ('+chiefNumber+')';
- await renderToday();await start();
+ await renderToday();await prepareExcel();await start();
 }
 async function stopCamera(){if(scanner&&reading){try{await scanner.stop()}catch(e){console.warn(e)}reading=false}}
 async function start(){
@@ -151,7 +140,7 @@ async function start(){
   $('editConfig').onclick=()=>{void showConfiguration()};
   $('downloadXlsx').onclick=()=>{void exportExcel(false)};
   $('shareXlsx').onclick=()=>{void exportExcel(true)};
-  await renderToday();
+  await renderToday();await prepareExcel();
   const c=(await get('config','device'))?.value;
   if(!c?.chiefName||!c?.chiefNumber||!c?.area)await showConfiguration();
   else{$('responsibleInfo').textContent='Área: '+c.area+' · Responsable: '+c.chiefName+' ('+c.chiefNumber+')';await start()}
