@@ -31,7 +31,8 @@ async function record(raw){
   const records=await readAll('records');
   const prior=records.filter(r=>String(r.number)===employee.number).sort((a,b)=>b.timestamp-a.timestamp)[0];
   if(prior&&now-prior.timestamp<8000){message('⚠ YA REGISTRADO\n'+employee.name+'\nEvita pasar el QR nuevamente.','bad');status('Lectura repetida; sin nuevo registro');return}
-  const device=(await get('config','device'))?.value;\n  if(!device?.chiefName||!device?.chiefNumber||!device?.area)throw Error('Falta configurar el responsable y el área');
+  const device=(await get('config','device'))?.value;
+  if(!device?.chiefName||!device?.chiefNumber||!device?.area)throw Error('Falta configurar el responsable y el área');
   const movement=!prior||prior.movement==='SALIDA'?'ENTRADA':'SALIDA';
   const dt=new Date(now);
   const row={id:crypto.randomUUID(),timestamp:now,iso:dt.toISOString(),localTime:dt.toLocaleString('es-MX'),number:employee.number,name:employee.name,administrativeArea:employee.area,role:employee.role,deviceId:device.id||'ANDROID',physicalArea:device.area,chiefName:device.chiefName,chiefNumber:device.chiefNumber,movement,sync:'LOCAL'};
@@ -91,7 +92,7 @@ async function exportExcel(share){
    const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
    status('Descarga solicitada: '+name+'. Comprueba la carpeta Descargas.');
   }
- }catch(e){status('No se completó la exportación: '+(e?.message||e))}
+ }catch(e){status('No se completó la exportación: '+(e?.message||e));message('❌ Error de Excel: '+(e?.message||e),'bad')}
 }
 async function showConfiguration(){
  await stopCamera();
