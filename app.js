@@ -80,19 +80,40 @@ async function createExcel(){
  const area=(config?.area||'Area').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,50);
  return {blob:zipXlsx(rows),name:'Asistencias_'+area+'_'+localDay(Date.now())+'.xlsx',count:records.length};
 }
+function downloadFile(blob,name){
+ const url=URL.createObjectURL(blob),link=document.createElement('a');
+ link.href=url;link.download=name;document.body.appendChild(link);link.click();link.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
 async function exportExcel(share){
  try{
+  // Generar ANTES del gesto share puede perder activación de usuario en Android.
   const {blob,name,count}=await createExcel();
-  if(share){
-   const file=new File([blob],name,{type:blob.type});
-   if(!navigator.share||!navigator.canShare?.({files:[file]}))throw Error('Android no permite compartir archivos desde este navegador. Utiliza Descargar Excel y compártelo desde Descargas.');
-   await navigator.share({files:[file],title:name});
-   status('Menú para compartir abierto · '+count+' registros conservados');
-  }else{
-   const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
-   status('Descarga solicitada: '+name+'. Comprueba la carpeta Descargas.');
+  if(!share){
+   downloadFile(blob,name);
+   status('Descarga solicitada: '+name+'. Revisa Descargas.');
+   return;
   }
- }catch(e){status('No se completó la exportación: '+(e?.message||e));message('❌ Error de Excel: '+(e?.message||e),'bad')}
+  const file=new File([blob],name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  if(!navigator.share||!navigator.canShare?.({files:[file]})){
+   downloadFile(blob,name);
+   message('⚠ Compartir archivo no disponible. Excel descargado: compártelo desde Descargas.','bad');
+   return;
+  }
+  try{
+   await navigator.share({files:[file]});
+   status('Archivo enviado al menú de compartir. '+count+' registros conservados.');
+  }catch(err){
+   if(err?.name==='AbortError')status('Compartir cancelado. Los registros siguen guardados.');
+   else if(err?.name==='NotAllowedError'||/permiso denegado|permission denied/i.test(String(err?.message))){
+    downloadFile(blob,name);
+    message('⚠ Android negó el permiso para compartir. Descargué el Excel: envíalo desde Archivos > Descargas a WhatsApp.','bad');
+   }else throw err;
+  }
+ }catch(e){
+  status('Exportación no completada: '+(e?.message||e));
+  message('❌ No se pudo preparar el archivo Excel: '+(e?.message||e),'bad');
+ }
 }
 async function showConfiguration(){
  await stopCamera();
