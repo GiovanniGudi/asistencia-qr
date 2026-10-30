@@ -96,8 +96,8 @@ function zipXlsx(rows){
 }
 async function createExcel(){
  const records=(await readAll('records')).sort((a,b)=>a.timestamp-b.timestamp),config=(await get('config','device'))?.value;
- const headers=['Número de empleado','Fecha','Hora','Área','Jefe directo','Número de empleado del jefe'];
- const rows=[headers,...records.map(r=>{const date=new Date(r.timestamp),d=String(date.getDate()).padStart(2,'0'),m=String(date.getMonth()+1).padStart(2,'0');return [r.number,d+'/'+m+'/'+date.getFullYear(),date.toLocaleTimeString('es-MX',{hour12:false}),r.physicalArea||config?.area||'',r.chiefName||config?.chiefName||'',r.chiefNumber||config?.chiefNumber||'']})];
+ const headers=['Número de empleado','Nombre completo','Área del empleado (QR)','Puesto (QR)','Fecha','Hora','Movimiento','Área de registro (equipo)','Jefe directo','Número de empleado del jefe'];
+ const rows=[headers,...records.map(r=>{const date=new Date(r.timestamp),d=String(date.getDate()).padStart(2,'0'),m=String(date.getMonth()+1).padStart(2,'0');return [r.number,r.name||'',r.administrativeArea||'',r.role||'',d+'/'+m+'/'+date.getFullYear(),date.toLocaleTimeString('es-MX',{hour12:false}),r.movement||'',r.physicalArea||config?.area||'',r.chiefName||config?.chiefName||'',r.chiefNumber||config?.chiefNumber||'']})];
  const area=(config?.area||'Area').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,50);
  const now=new Date(),stamp=localDay(now)+'_'+String(now.getHours()).padStart(2,'0')+'-'+String(now.getMinutes()).padStart(2,'0')+'-'+String(now.getSeconds()).padStart(2,'0');
  return {blob:zipXlsx(rows),name:'Asistencias_'+area+'_'+stamp+'.xlsx',count:records.length};
