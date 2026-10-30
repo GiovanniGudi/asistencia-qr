@@ -79,7 +79,8 @@ async function createExcel(){
  const headers=['Número de empleado','Fecha','Hora','Área','Jefe directo','Número de empleado del jefe'];
  const rows=[headers,...records.map(r=>{const date=new Date(r.timestamp),d=String(date.getDate()).padStart(2,'0'),m=String(date.getMonth()+1).padStart(2,'0');return [r.number,d+'/'+m+'/'+date.getFullYear(),date.toLocaleTimeString('es-MX',{hour12:false}),r.physicalArea||config?.area||'',r.chiefName||config?.chiefName||'',r.chiefNumber||config?.chiefNumber||'']})];
  const area=(config?.area||'Area').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,50);
- return {blob:zipXlsx(rows),name:'Asistencias_'+area+'_'+localDay(Date.now())+'.xlsx',count:records.length};
+ const now=new Date(),stamp=localDay(now)+'_'+String(now.getHours()).padStart(2,'0')+'-'+String(now.getMinutes()).padStart(2,'0')+'-'+String(now.getSeconds()).padStart(2,'0');
+ return {blob:zipXlsx(rows),name:'Asistencias_'+area+'_'+stamp+'.xlsx',count:records.length};
 }
 function downloadFile(blob,name){
  const url=URL.createObjectURL(blob),link=document.createElement('a');
@@ -90,11 +91,34 @@ async function prepareExcel(){
  try{preparedExcel=await createExcel();return true}
  catch(err){preparedExcel=null;status('Error preparando Excel: '+err.message);return false}
 }
+async function saveReportToFolder(dir){
+ const latest=await createExcel();
+ const folder=await dir.getDirectoryHandle('Reportes de Accesos de Areas',{create:true});
+ const file=await folder.getFileHandle(latest.name,{create:true});
+ const writable=await file.createWritable();
+ await writable.write(latest.blob);await writable.close();
+ status('Archivo guardado en Reportes de Accesos de Areas: '+latest.name);
+}
 function exportExcel(share){
  // El diálogo del sistema necesita activación directa del toque.
  if(!preparedExcel){status('Preparando Excel. Pulsa de nuevo.');void prepareExcel();return}
  const {blob,name,count}=preparedExcel;
- if(!share){try{downloadFile(blob,name);status('Descarga solicitada: '+name+'. Confirma en Descargas.')}catch(e){status('Error de descarga: '+e.message)}return}
+ if(!share){
+  if(typeof window.showDirectoryPicker==='function'){
+   // El selector debe abrirse durante el gesto del usuario.
+   window.showDirectoryPicker({mode:'readwrite'}).then(dir=>saveReportToFolder(dir)).catch(err=>{
+    if(err?.name==='AbortError')status('Guardado cancelado. Los registros permanecen en el teléfono.');
+    else status('No se pudo crear la carpeta: '+err.message+'. Usa la descarga normal si el navegador no permite carpetas.');
+   });
+   return;
+  }
+  try{
+   // Android Chrome normalmente no permite crear subcarpetas desde una PWA.
+   // Conservar el Excel normal, sin afirmar que se creó una carpeta.
+   downloadFile(blob,name);
+   status('Archivo descargado: '+name+'. Android no permite crear la carpeta automáticamente desde este navegador. Muévelo a Reportes de Accesos de Areas en Archivos.');
+  }catch(e){status('Error de descarga: '+e.message)}return;
+ }
  const file=new File([blob],name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
  if(!navigator.share||!navigator.canShare?.({files:[file]})){status('Android no permite adjuntar archivos desde esta página. No se abrió WhatsApp sin el Excel.');return}
  try{
