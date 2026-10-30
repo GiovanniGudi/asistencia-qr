@@ -100,9 +100,9 @@ function exportExcel(share){
  try{
   Promise.resolve(navigator.share({files:[file]})).then(()=>status('Compartir finalizado. '+count+' registros conservados.')).catch(err=>{
    if(err?.name==='AbortError')status('Compartir cancelado; datos conservados.');
-   else status('Android rechazó compartir: '+(err?.message||err)+'. Descarga Excel y adjúntalo en WhatsApp.');
+   else {try{downloadFile(blob,name);status('Android bloqueó el envío directo. Se solicitó descargar '+name+'. Compártelo desde WhatsApp > Documento.')}catch(e){status('Android bloqueó compartir y descargar: '+e.message)}}
   });
- }catch(err){status('Android negó permiso para compartir: '+(err?.message||err)+'. Usa Descargar Excel.')}
+ }catch(err){try{downloadFile(blob,name);status('Android rechazó compartir. Se solicitó descargar '+name+'. Adjunta desde WhatsApp > Documento.')}catch(e){status('Android no permitió compartir ni descargar: '+e.message)}}
 }
 async function showConfiguration(){
  await stopCamera();
