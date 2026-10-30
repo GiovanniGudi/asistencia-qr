@@ -163,7 +163,7 @@ async function start(){
   $('configForm').addEventListener('submit',e=>{void saveConfiguration(e)});
   $('editConfig').onclick=()=>{void showConfiguration()};
   $('downloadXlsx').onclick=()=>{void exportExcel(false)};
-  $('shareXlsx').onclick=()=>{void exportExcel(true)};
+
   await renderToday();await prepareExcel();
   const c=(await get('config','device'))?.value;
   if(!c?.chiefName||!c?.chiefNumber||!c?.area)await showConfiguration();
